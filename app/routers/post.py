@@ -10,10 +10,18 @@ router = APIRouter(prefix='/posts', tags=['Post'])
 
 @router.get('/', response_model=List[schemas.Post])
 def get_posts(db: Session = Depends(get_db),
-              current_user: models.User = Depends(oauth2.get_current_user)):
+              current_user: models.User = Depends(oauth2.get_current_user),
+              limit: int = 10,
+              skip: int = 0,
+              search: Optional[str] = "",
+              ):
     # cursor.execute("""SELECT * FROM posts""")
     # posts = cursor.fetchall()
-    posts = db.query(models.Post).all()
+    posts = db.query(models.Post)\
+        .filter(models.Post.title.contains(search))\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
     return posts
 
 
@@ -39,8 +47,9 @@ def create_posts(post: schemas.PostCreate, db: Session = Depends(get_db),
     # new_post = cursor.fetchone()
     # conn.commit()
     # print(current_user.email)
-    print(type(current_user))
-    new_post = models.Post(**post.dict())
+
+    new_post = models.Post(owner_id=current_user.id, **post.dict())
+
     db.add(new_post)
     db.commit()
     db.refresh(new_post)
@@ -63,6 +72,10 @@ def delete_post(id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f'id: {id} was not found')
 
+    if post.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f'Not authorized')
+
     post_query.delete(synchronize_session=False)
     db.commit()
 
@@ -84,6 +97,10 @@ def update_post(id: int, updated_post: schemas.PostCreate, db: Session = Depends
     if post == None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f'id: {id} was not found')
+
+    if post.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f'Not authorized')
 
     post_query.update(updated_post.dict(), synchronize_session=False)
     db.commit()
